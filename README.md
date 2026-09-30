@@ -1,190 +1,179 @@
 # Privacy100 — Secure AI Hackathon 2026
 
-Privacy100 is our submission for the **Intermediate Track** of the Secure AI Hackathon 2026.
+Privacy100 is our federated intrusion-detection submission for the **Secure AI Hackathon 2026**.
 
-The project addresses federated intrusion detection under strongly non-IID client distributions. Five banks collaboratively train an intrusion detection system without sharing their raw network traffic.
+Our work covers both the **Intermediate** and **Advanced** Day 2 tracks, with **Advanced** as our primary submitted track.
 
-Our final approach combines a high-recall neural detector with a high-precision federated tree ensemble.
+The project studies two problems in federated learning across five banks:
 
-## Challenge
+1. strongly non-IID client distributions;
+2. malicious clients sending poisoned model updates.
 
-In the Intermediate Track, the main difficulty is that each bank observes a different distribution of normal traffic and attack families.
+Raw client traffic is never centrally pooled.
 
-Under this setting, naive FedAvg became unstable and achieved:
+## Main Results
 
-**F1 = 0.7035**
+### Intermediate — Non-IID Federated Learning
 
-The objective was to improve detection performance while preserving the federated-learning constraint:
+Naive FedAvg on the non-IID split:
 
-> Raw client data never leaves the bank.
+**F1 = 0.7264 ± 0.0216**
 
-## Privacy100 Approach
+Our normalized server aggregation alone:
 
-Our final system combines two complementary federated experts.
+**F1 = 0.7612 ± 0.0195**
 
-### 1. Neural Expert
+Full skew-aware pipeline with normalized aggregation and locally balanced loss:
 
-The neural branch uses:
+**F1 = 0.7836 ± 0.0067**
 
-- Residual MLP
-- SCAFFOLD
-- Hard-Negative Focal Loss
-- Equal server aggregation
+IID FedAvg reference:
 
-This model prioritizes attack detection and achieves very high recall.
+**F1 = 0.7654 ± 0.0121**
 
-Neural-only result:
+### Advanced — Poisoning Defense
 
-- Precision: **0.7858**
-- Recall: **0.9681**
-- F1: **0.8675**
+Main attack scenario:
 
-### 2. Federated ExtraTrees Expert
+- 5 non-IID banks;
+- client 1 malicious;
+- local label flipping;
+- update amplification ×15;
+- 8 federated rounds;
+- evaluation over seeds `[42, 43, 44, 45, 46]`.
 
-Each bank independently trains an ExtraTrees classifier using only its local data.
+Naive FedAvg under attack:
 
-No raw samples are pooled.
+**F1 = 0.3092 ± 0.1781**
 
-The five local predictions are combined using robust trimmed aggregation:
+Privacy100 KrumShield:
 
-1. sort the five attack probabilities;
-2. remove the highest prediction;
-3. remove the lowest prediction;
-4. average the remaining three.
+**F1 = 0.7629 ± 0.0171**
 
-The ExtraTrees expert achieves lower recall but very high precision.
+Overall F1 recovery:
 
-ExtraTrees-only result:
+**+0.4536**
 
-- Precision: **0.9666**
-- Recall: **0.6366**
-- F1: **0.7676**
+For a controlled comparison using the same locally balanced training:
 
-### 3. Dual-Expert Hybrid
+**FedAvg = 0.5202 ± 0.0910**
 
-The final Privacy100 model exploits the complementary behavior of both experts.
+**KrumShield = 0.7629 ± 0.0171**
 
-The neural model acts as the primary high-recall detector, while the ExtraTrees ensemble acts as a high-precision correction mechanism.
+Controlled improvement:
 
-The hybrid decision layer uses:
+**+0.2426 F1**
 
-- neural attack prediction;
-- normal-traffic veto when tree consensus strongly indicates normal traffic;
-- attack rescue when the tree ensemble has very high attack confidence.
+## KrumShield
 
-This significantly reduces false positives while maintaining high recall.
+KrumShield is a robust federated aggregation and malicious-client attribution mechanism.
 
-## Final Results
+It uses four main stages:
 
-| Model | Precision | Recall | F1 |
-|---|---:|---:|---:|
-| Naive FedAvg | — | — | **0.7035** |
-| Residual SCAFFOLD Neural | 0.7858 | 0.9681 | **0.8675** |
-| Federated ExtraTrees | 0.9666 | 0.6366 | **0.7676** |
-| Privacy100 Hybrid | **0.8710** | **0.9626** | **0.9145** |
+1. **Median-norm clipping**  
+   Large updates cannot dominate the federation simply through magnitude.
 
-Final confusion matrix:
+2. **Directional consistency**  
+   Client updates are compared using cosine similarity after clipping.
 
-| Metric | Count |
+3. **Temporal reputation**  
+   An exponential moving average tracks whether each client remains consistent with the federation across rounds.
+
+4. **Selective aggregation**  
+   Persistently suspicious clients are excluded and the remaining updates are normalized before aggregation.
+
+This allows KrumShield to both resist poisoning and identify suspicious participants.
+
+## Malicious-Client Detection
+
+For the primary one-attacker ×15 scenario:
+
+- round-level detection precision: **1.00**
+- round-level detection recall: **0.575**
+- attacker identified: **5/5 sessions**
+- sessions with false accusations: **0/5**
+
+## Comparison with Robust Baselines
+
+| Defense | F1 with balanced local training |
 |---|---:|
-| True Positives | 12,353 |
-| False Positives | 1,829 |
-| False Negatives | 480 |
-| True Negatives | 7,882 |
+| FedAvg | 0.5202 ± 0.0910 |
+| Norm clipping | 0.7372 ± 0.0254 |
+| Krum | 0.7214 ± 0.0163 |
+| Multi-Krum | 0.7307 ± 0.0196 |
+| Coordinate median | 0.7354 ± 0.0258 |
+| Trimmed mean | 0.7397 ± 0.0216 |
+| Median clipping only | 0.7623 ± 0.0198 |
+| **KrumShield** | **0.7629 ± 0.0171** |
 
-Privacy100 therefore improves F1 from:
+KrumShield is approximately tied with median clipping on F1.
 
-**0.7035 → 0.9145**
+Its main additional contribution is **attack attribution**, not simply classification accuracy.
 
-Absolute improvement:
+## Robustness Tests
 
-**+0.2110 F1**
+KrumShield was also evaluated under:
 
-## Repository Structure
+- ×50 update amplification;
+- label-flip without amplification;
+- two malicious clients.
+
+For one malicious client, KrumShield maintained approximately **0.7629 F1** under both amplified and non-amplified attacks and identified the attacker in all five seeds without false accusations.
+
+With two colluding malicious clients, classification performance remained strong, but the pairwise attribution mechanism failed to identify the attackers.
+
+## KrumShield-R Extension
+
+We explored a second version, **KrumShield-R**, to address colluding attackers.
+
+Instead of measuring consistency only between clients, KrumShield-R compares each client update with a server-side reference direction generated from approximately 200 labeled samples.
+
+This restored two-attacker attribution in our experiments.
+
+However, this extension requires an additional trusted-data assumption. Experiments with biased reference sets showed that the choice of the reference data can also introduce false accusations.
+
+KrumShield-R is therefore included as an experimental extension rather than the primary submitted model.
+
+## Exported Model
+
+The repository includes:
+
+`model_scripted.pt`
+
+This is the final TorchScript model produced by the notebook for the Advanced track.
+
+The exported seed-42 model achieves:
+
+- Precision: **0.9363**
+- Recall: **0.6338**
+- F1: **0.7559**
+
+The five-seed average of the KrumShield defense is:
+
+**0.7629 ± 0.0171**
+
+The difference exists because the exported artifact is a single deterministic seed-42 model, while the primary experimental result reports the mean across five seeds.
+
+## Repository Contents
 
 ```text
 Privacy100-SecureAI-Hackathon-2026/
-│
 ├── README.md
+├── Day2_Advanced_Privacy100.ipynb
 ├── model_scripted.pt
 ├── submission.json
-├── requirements.txt
-├── PrivacyTeam_Intermediate_Day2.ipynb
-
-   
+├── cover.png
+└── requirements.txt
 ```
-
-## Files
-
-### `model_scripted.pt`
-
-TorchScript export of the final Privacy100 hybrid model.
-
-It contains:
-
-- the neural Residual MLP;
-- the converted federated ExtraTrees models;
-- trimmed tree aggregation;
-- veto and rescue decision logic.
-
-The model expects:
-
-```text
-41 input features
-```
-
-and returns one binary classification logit per sample.
-
-### `submission.json`
-
-Contains the submission metadata and self-reported metrics.
-
-Example:
-
-```json
-{
-  "team_name": "Privacy100",
-  "track": "intermediate",
-  "self_reported_metrics": {
-    "precision": 0.871,
-    "recall": 0.9626,
-    "f1": 0.9145
-  },
-  "model_file": "model_scripted.pt",
-  "n_input_features": 41
-}
-```
-
-### `PrivacyTeam_Intermediate_Day2.ipynb`
-
-The notebook contains the complete experimental pipeline:
-
-1. NSL-KDD preprocessing;
-2. deterministic non-IID partitioning across five banks;
-3. naive FedAvg baseline;
-4. residual neural architecture;
-5. SCAFFOLD federated training;
-6. Hard-Negative Focal Loss;
-7. local ExtraTrees training;
-8. robust trimmed aggregation;
-9. dual-expert hybrid decision logic;
-10. final evaluation;
-11. TorchScript export.
 
 ## Setup
 
-Recommended environment:
+Python 3 is required.
 
-- Python 3.x
-- PyTorch
-- NumPy
-- Pandas
-- scikit-learn
-
-Install the main dependencies with:
+Install dependencies with:
 
 ```bash
-pip install torch numpy pandas scikit-learn
+pip install torch scikit-learn pandas numpy scipy matplotlib
 ```
 
 ## Reproducing the Results
@@ -192,52 +181,71 @@ pip install torch numpy pandas scikit-learn
 Open:
 
 ```text
-notebooks/Privacy100_Intermediate.ipynb
+Day2_Advanced_Privacy100.ipynb
 ```
 
-Run the notebook from top to bottom.
+Run every cell from top to bottom.
 
-The preprocessing and non-IID client split must be executed before the custom Privacy100 training cell.
+The notebook:
 
-The final model should produce approximately:
+- downloads and preprocesses NSL-KDD;
+- creates IID and non-IID five-bank partitions;
+- evaluates the Intermediate aggregation strategies;
+- simulates malicious clients;
+- evaluates Byzantine-robust aggregation baselines;
+- trains and evaluates KrumShield over five seeds;
+- performs robustness and sensitivity tests;
+- exports `model_scripted.pt`;
+- generates `submission.json`.
+
+## Submission Artifacts
+
+### `model_scripted.pt`
+
+TorchScript export of the final Advanced model.
+
+Input:
 
 ```text
-Precision: 0.8710
-Recall:    0.9626
-F1:        0.9145
+41 standardized NSL-KDD features
 ```
 
-The final submission cell exports:
+Output:
 
 ```text
-model_scripted.pt
-submission.json
+one binary classification logit per connection
 ```
 
-## Federated Learning Constraint
+### `submission.json`
 
-Privacy100 does not pool raw client traffic.
+Contains:
 
-Each bank trains locally on its own data.
+- team name;
+- selected track;
+- exported model metrics;
+- main poisoning scenario;
+- five-seed baseline and defense results;
+- recovered F1;
+- malicious-client detection metrics;
+- KrumShield-R extension results.
 
-The server only operates on model updates, model outputs, or aggregated predictions depending on the component of the system.
+## Privacy Model
 
-This preserves the central privacy constraint of the federated-learning scenario.
+No raw client traffic is pooled during federated training.
 
-## Key Takeaway
+Each bank performs local optimization and sends only its trained model/update to the aggregation process.
 
-Our main finding is that non-IID federated intrusion detection was not solved by simply increasing model complexity.
+## Limitations
 
-The strongest improvement came from combining two models with complementary behaviors:
+KrumShield's original pairwise-consistency mechanism is designed primarily for the one-malicious-client scenario.
 
-- the neural detector provides high sensitivity;
-- the federated ExtraTrees ensemble provides conservative high-precision confirmation.
+With two colluding malicious clients it maintains classification performance but can fail to attribute the attackers.
 
-The disagreement between both experts is therefore treated as useful information rather than noise.
+KrumShield-R addresses this limitation at the cost of requiring a small labeled server-side reference set.
 
 ## Team
 
-**Team:** Privacy100  
-**Country:** Côte d’Ivoire  
-**Track:** Intermediate  
-**Competition:** Secure AI Hackathon 2026
+**Privacy100**  
+**Côte d’Ivoire**  
+**Primary Track: Advanced**  
+**Additional Track Attempted: Intermediate**
